@@ -1,0 +1,33 @@
+[package]
+authors = ["Matt Vertescher <mvertescher@gmail.com>"]
+categories = ["embedded", "hardware-support", "no-std"]
+description = "HAL for the STM32F7xx family of microcontrollers"
+documentation = "https://docs.rs/stm32f7xx-hal"
+edition = "2018"
+keywords = ["arm", "cortex-m", "stm32f7xx", "hal"]
+license = "MIT OR Apache-2.0"
+name = "slimmed"
+version = "0.6.0"
+
+[features]
+stm32f746 = []
+rt = []
+
+[dependencies]
+as-slice = "0.2"
+bare-metal = "1.0"
+bxcan = "0.6"
+cortex-m = "0.7"
+cortex-m-rt = ">=0.6.15, <0.8"
+embedded-graphics = "0.7.1"
+embedded-time = "0.12.0"
+nb = "1.0"
+micromath = "2.0"
+numtoa = "0.2.4"
+panic-semihosting = "0.5.2"
+profont = "0.5.0"
+rand_core = "0.6"
+stm32f7 = "0.14.0"
+stm32f7xx-hal = {version = "0.6.0", features = ["stm32f746"]}
+stm32-fmc = { version = "0.2.0", features = ["sdram"], optional = true }
+synopsys-usb-otg = { version = "0.2.3", features = ["cortex-m"], optional = true }
