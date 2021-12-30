@@ -22,7 +22,9 @@ use profont::PROFONT_24_POINT;
 use screen::Stm32F7DiscoDisplay;
 
 use stm32f7xx_hal::{
+    self as hal,
     gpio::Speed,
+    i2c::{BlockingI2c, I2c, Mode},
     ltdc::{Layer, PixelFormat},
     pac,
     // draw_rectangle,
@@ -40,17 +42,22 @@ const HEIGHT: u16 = 272;
 const FB_GRAPHICS_SIZE: usize = (WIDTH as usize) * (HEIGHT as usize);
 static mut FB_LAYER1: [u16; FB_GRAPHICS_SIZE] = [0; FB_GRAPHICS_SIZE];
 
-fn button(x: i32, y: i32, caption: &str, display: &mut Stm32F7DiscoDisplay<u16>) {
-    const BUTTON_WIDTH: u32 = 45;
-    const BUTTON_HEIGHT: u32 = 50;
-    const TEXT_XOFFSET: i32 = 15;
-    const TEXT_YOFFSET: i32 = 32;
-    const CORNER_RADIUS: u32 = 6;
-    const BUTTON_STROKE_WIDTH: u32 = 3;
-    const BUTTON_STROKE_COLOR: Rgb565 = <Rgb565>::BLUE;
-    const BUTTON_FILL_COLOR: Rgb565 = <Rgb565>::WHITE;
-    const TEXT_COLOR: Rgb565 = <Rgb565>::BLACK;
+const BUTTON_WIDTH: u32 = 50;
+const BUTTON_HEIGHT: u32 = 45;
+const TEXT_XOFFSET: i32 = 18;
+const TEXT_YOFFSET: i32 = 31;
+const CORNER_RADIUS: u32 = 6;
+const BUTTON_STROKE_WIDTH: u32 = 2;
+const BUTTON_STROKE_COLOR: Rgb565 = <Rgb565>::BLUE;
+const BUTTON_FILL_COLOR: Rgb565 = <Rgb565>::WHITE;
+const BACKGROUND_COLOR: Rgb565 = Rgb565::new(10, 10, 10);
+const TEXT_COLOR: Rgb565 = <Rgb565>::BLACK;
+const KEY_X_OFFSET: i32 = 290;
+const KEY_Y_OFFSET: i32 = 60;
+const KEY_X_SPACING: i32 = 65;
+const KEY_Y_SPACING: i32 = 55;
 
+fn button(x: i32, y: i32, caption: &str, display: &mut Stm32F7DiscoDisplay<u16>) {
     let style = PrimitiveStyleBuilder::new()
         .stroke_width(BUTTON_STROKE_WIDTH)
         .stroke_color(BUTTON_STROKE_COLOR)
@@ -81,7 +88,7 @@ fn main() -> ! {
     let perif = pac::Peripherals::take().unwrap();
     let _cp = cortex_m::Peripherals::take().unwrap();
 
-    let rcc_hal: Rcc = perif.RCC.constrain();
+    let mut rcc_hal: Rcc = perif.RCC.constrain();
 
     // Set up pins
     let _gpioa = perif.GPIOA.split();
@@ -129,12 +136,33 @@ fn main() -> ! {
 
     // HSE osc out in High Z
     gpioh.ph1.into_floating_input();
-    let _clocks = rcc_hal
+    let clocks = rcc_hal
         .cfgr
         .hse(HSEClock::new(25_000_000.Hz(), HSEClockMode::Bypass))
         .sysclk(216_000_000.Hz())
         .hclk(216_000_000.Hz())
         .freeze();
+
+    let scl = gpioh.ph7.into_alternate_open_drain::<4>();
+    let sda = gpioh.ph8.into_alternate_open_drain::<4>();
+
+    let i2c = hal::i2c::BlockingI2c::i2c3(
+        perif.I2C3,
+        (scl, sda),
+        Mode::fast(100_000.Hz()),
+        clocks,
+        &mut rcc_hal.apb1,
+        10_000,
+    );
+
+    // pub fn i2c3(
+    //     i2c: I2C3,
+    //     pins: (SCL, SDA),
+    //     mode: Mode,
+    //     clocks: Clocks,
+    //     apb: &mut <I2C3 as RccBus>::Bus,
+    //     data_timeout_us: u32
+    // ) -> Self
 
     // LCD enable: set it low first to avoid LCD bleed while setting up timings
     let mut disp_on = gpioi.pi12.into_push_pull_output();
@@ -165,14 +193,14 @@ fn main() -> ! {
     let style = PrimitiveStyleBuilder::new()
         // .stroke_color(Rgb565::RED)
         // .stroke_width(3)
-        .fill_color(Rgb565::BLUE)
+        .fill_color(BUTTON_STROKE_COLOR)
         .build();
 
     // let d = Rectangle::new((32,32), (448,240))
     //     .into_styled(style);
     //     .draw(&mut display);
 
-    let c = Rgb565::RED;
+    let c = BACKGROUND_COLOR;
 
     let color: u32 =
         c.b() as u32 & 0x1F | ((c.g() as u32 & 0x3F) << 5) | ((c.r() as u32 & 0x1F) << 11);
@@ -184,9 +212,9 @@ fn main() -> ! {
     }
 
     let mut buf = [0u8; 20];
-    for i in 0..3 {
+    for i in (0..3).rev() {
         for j in 0..3 {
-            let a = match (1 + i * 3 + j) {
+            let a = match 1 + i * 3 + j {
                 0 => "0",
                 1 => "1",
                 2 => "2",
@@ -199,9 +227,59 @@ fn main() -> ! {
                 9 => "9",
                 _ => "",
             };
-            button(250 + j * 60, 40 + i * 70, a, &mut display);
+            button(
+                KEY_X_OFFSET + j * KEY_X_SPACING,
+                KEY_Y_OFFSET + i * KEY_Y_SPACING,
+                a,
+                &mut display,
+            );
         }
     }
+    button(
+        KEY_X_OFFSET,
+        KEY_Y_OFFSET + 3 * KEY_Y_SPACING,
+        "0",
+        &mut display,
+    );
+    button(
+        KEY_X_OFFSET + 1 * KEY_X_SPACING,
+        KEY_Y_OFFSET + 3 * KEY_Y_SPACING,
+        ".",
+        &mut display,
+    );
+    button(
+        KEY_X_OFFSET + 2 * KEY_X_SPACING,
+        KEY_Y_OFFSET + 3 * KEY_Y_SPACING,
+        "",
+        &mut display,
+    );
+
+    let style = PrimitiveStyleBuilder::new()
+        .stroke_width(BUTTON_STROKE_WIDTH)
+        .stroke_color(BUTTON_STROKE_COLOR)
+        .fill_color(Rgb565::BLACK)
+        .build();
+
+    RoundedRectangle::with_equal_corners(
+        Rectangle::new(
+            Point::new(KEY_X_OFFSET, KEY_Y_OFFSET - 55),
+            Size::new(BUTTON_WIDTH + (2 * KEY_X_SPACING) as u32, BUTTON_HEIGHT),
+        ),
+        Size::new(CORNER_RADIUS, CORNER_RADIUS),
+    )
+    .into_styled(style)
+    .draw(&mut display)
+    .ok();
+
+    let style = MonoTextStyle::new(&PROFONT_24_POINT, Rgb565::YELLOW);
+
+    Text::new(
+        "300.89",
+        Point::new(KEY_X_OFFSET + TEXT_XOFFSET, 5 + TEXT_YOFFSET),
+        style,
+    )
+    .draw(&mut display)
+    .ok();
 
     // button(20, 40, "1", &mut display);
 

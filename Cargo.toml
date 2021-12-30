@@ -6,7 +6,7 @@ documentation = "https://docs.rs/stm32f7xx-hal"
 edition = "2018"
 keywords = ["arm", "cortex-m", "stm32f7xx", "hal"]
 license = "MIT OR Apache-2.0"
-name = "slimmed"
+name = "stm32f7-cnc-ui"
 version = "0.6.0"
 
 [features]
