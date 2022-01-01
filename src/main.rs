@@ -2,36 +2,39 @@
 #![no_main]
 #![no_std]
 
-// Required
-extern crate panic_semihosting;
+use core::ops::Range;
 use cortex_m_rt::entry;
+// use cortex_m_semihosting::{hprint, hprintln};
 use embedded_graphics::{
-    mono_font::{ascii::FONT_10X20, ascii::FONT_6X10, MonoTextStyle},
-    pixelcolor::{BinaryColor, Rgb565, RgbColor},
+    mono_font::MonoTextStyle,
+    pixelcolor::{Rgb565, RgbColor},
     prelude::*,
-    primitives::{
-        Circle, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, RoundedRectangle,
-        StrokeAlignment, Triangle,
-    },
-    text::{Alignment, Text},
+    primitives::{PrimitiveStyleBuilder, Rectangle, RoundedRectangle},
+    text::Text,
 };
-use numtoa::NumToA;
-// use std::String;
 
+// use ft5336::Ft5336;
+
+#[allow(unused_imports)]
+use panic_semihosting;
+
+// use ft5336::Ft5336;
 use profont::PROFONT_24_POINT;
+use rtt_target::{rprintln, rtt_init_print};
 use screen::Stm32F7DiscoDisplay;
 
 use stm32f7xx_hal::{
-    self as hal,
+    delay::Delay,
     gpio::Speed,
-    i2c::{BlockingI2c, I2c, Mode},
+    i2c::{BlockingI2c, Mode},
     ltdc::{Layer, PixelFormat},
     pac,
-    // draw_rectangle,
+    prelude::_embedded_hal_blocking_delay_DelayMs,
     prelude::*,
     rcc::{HSEClock, HSEClockMode, Rcc},
 };
 
+// mod ft5336;
 mod screen;
 
 // DIMENSIONS
@@ -83,10 +86,94 @@ fn button(x: i32, y: i32, caption: &str, display: &mut Stm32F7DiscoDisplay<u16>)
     .ok();
 }
 
+fn draw_keypad(display: &mut Stm32F7DiscoDisplay<u16>) {
+    let c = BACKGROUND_COLOR;
+    let background_color: u32 =
+        c.b() as u32 & 0x1F | ((c.g() as u32 & 0x3F) << 5) | ((c.r() as u32 & 0x1F) << 11);
+
+    unsafe {
+        display
+            .controller
+            .draw_rectangle(Layer::L1, (0, 0), (480, 272), background_color);
+    }
+
+    for i in (0..3).rev() {
+        for j in 0..3 {
+            let a = match 1 + i * 3 + j {
+                0 => "0",
+                1 => "1",
+                2 => "2",
+                3 => "3",
+                4 => "4",
+                5 => "5",
+                6 => "6",
+                7 => "7",
+                8 => "8",
+                9 => "9",
+                _ => "",
+            };
+            button(
+                KEY_X_OFFSET + j * KEY_X_SPACING,
+                KEY_Y_OFFSET + i * KEY_Y_SPACING,
+                a,
+                display,
+            );
+        }
+    }
+    button(KEY_X_OFFSET, KEY_Y_OFFSET + 3 * KEY_Y_SPACING, "0", display);
+    button(
+        KEY_X_OFFSET + 1 * KEY_X_SPACING,
+        KEY_Y_OFFSET + 3 * KEY_Y_SPACING,
+        ".",
+        display,
+    );
+    button(
+        KEY_X_OFFSET + 2 * KEY_X_SPACING,
+        KEY_Y_OFFSET + 3 * KEY_Y_SPACING,
+        "",
+        display,
+    );
+
+    let style = PrimitiveStyleBuilder::new()
+        .stroke_width(BUTTON_STROKE_WIDTH)
+        .stroke_color(BUTTON_STROKE_COLOR)
+        .fill_color(Rgb565::BLACK)
+        .build();
+
+    RoundedRectangle::with_equal_corners(
+        Rectangle::new(
+            Point::new(KEY_X_OFFSET, KEY_Y_OFFSET - 55),
+            Size::new(BUTTON_WIDTH + (2 * KEY_X_SPACING) as u32, BUTTON_HEIGHT),
+        ),
+        Size::new(CORNER_RADIUS, CORNER_RADIUS),
+    )
+    .into_styled(style)
+    .draw(display)
+    .ok();
+
+    let style = MonoTextStyle::new(&PROFONT_24_POINT, Rgb565::YELLOW);
+
+    Text::new(
+        "300.89",
+        Point::new(KEY_X_OFFSET + TEXT_XOFFSET, 5 + TEXT_YOFFSET),
+        style,
+    )
+    .draw(display)
+    .ok();
+}
+
+// impl cortex_m::prelude::_embedded_hal_blocking_delay_DelayUs<i32> for stm32f7xx_hal::delay::Delay {
+//     fn delay(&self) {}
+// }
+
 #[entry]
 fn main() -> ! {
+    rtt_init_print!();
+
+    rprintln!("Started");
+
     let perif = pac::Peripherals::take().unwrap();
-    let _cp = cortex_m::Peripherals::take().unwrap();
+    let cp = cortex_m::Peripherals::take().unwrap();
 
     let mut rcc_hal: Rcc = perif.RCC.constrain();
 
@@ -101,7 +188,6 @@ fn main() -> ! {
     let gpiok = perif.GPIOK.split();
 
     gpioe.pe4.into_alternate::<14>().set_speed(Speed::VeryHigh); // LTCD_B0
-
     gpiog.pg12.into_alternate::<9>().set_speed(Speed::VeryHigh); // LTCD_B4
 
     gpioi.pi9.into_alternate::<14>().set_speed(Speed::VeryHigh); // LTCD_VSYNC
@@ -142,27 +228,11 @@ fn main() -> ! {
         .sysclk(216_000_000.Hz())
         .hclk(216_000_000.Hz())
         .freeze();
+    let mut delay = Delay::new(cp.SYST, clocks);
 
-    let scl = gpioh.ph7.into_alternate_open_drain::<4>();
-    let sda = gpioh.ph8.into_alternate_open_drain::<4>();
-
-    let i2c = hal::i2c::BlockingI2c::i2c3(
-        perif.I2C3,
-        (scl, sda),
-        Mode::fast(100_000.Hz()),
-        clocks,
-        &mut rcc_hal.apb1,
-        10_000,
-    );
-
-    // pub fn i2c3(
-    //     i2c: I2C3,
-    //     pins: (SCL, SDA),
-    //     mode: Mode,
-    //     clocks: Clocks,
-    //     apb: &mut <I2C3 as RccBus>::Bus,
-    //     data_timeout_us: u32
-    // ) -> Self
+    rprintln!("Connecting to I2c");
+    let scl = gpioh.ph7.into_alternate_open_drain::<4>(); //LCD_SCL
+    let sda = gpioh.ph8.into_alternate_open_drain::<4>(); //LSD_SDA
 
     // LCD enable: set it low first to avoid LCD bleed while setting up timings
     let mut disp_on = gpioi.pi12.into_push_pull_output();
@@ -179,150 +249,223 @@ fn main() -> ! {
 
     display.controller.enable_layer(Layer::L1);
     display.controller.reload();
-
-    // let display = &mut display;
-
-    // LCD enable: activate LCD !
     disp_on.set_high();
 
-    // Example of circle
-    // let circle = Circle::new(Point::new(22,22), 20)
-    //     .into_styled(PrimitiveStyle::with_stroke(Rgb565::new(0, 0b11110, 0b11011), 3));
-    // circle.draw(&mut display);
+    draw_keypad(&mut display);
 
-    let style = PrimitiveStyleBuilder::new()
-        // .stroke_color(Rgb565::RED)
-        // .stroke_width(3)
-        .fill_color(BUTTON_STROKE_COLOR)
-        .build();
+    let mut i2c = BlockingI2c::i2c3(
+        perif.I2C3,
+        (scl, sda),
+        Mode::fast(100_000.Hz()),
+        clocks,
+        &mut rcc_hal.apb1,
+        10_000,
+    );
 
-    // let d = Rectangle::new((32,32), (448,240))
-    //     .into_styled(style);
-    //     .draw(&mut display);
+    // const VALID_ADDR_RANGE: Range<u8> = 0x08..0x78;
 
-    let c = BACKGROUND_COLOR;
+    // ****************************************************************************************************
 
-    let color: u32 =
-        c.b() as u32 & 0x1F | ((c.g() as u32 & 0x3F) << 5) | ((c.r() as u32 & 0x1F) << 11);
+    // for addr in 0x00_u8..0x80 {
+    //     // Write the empty array and check the slave response.
+    //     let byte: [u8; 1] = [0; 1];
+    //     if VALID_ADDR_RANGE.contains(&addr) && i2c.write(addr, &byte).is_ok() {
+    //         addresses += 1;
+    //         rprintln!("Address: {}", addr);
+    //     }
+    // }
+    // rprintln!("Found {} I2C devices on bus 3", addresses);
 
-    unsafe {
-        display
-            .controller
-            .draw_rectangle(Layer::L1, (0, 0), (480, 272), color); //0x003f3 as u32);
+    let cmd: [u8; 1] = [0];
+    let mut buf: [u8; 1] = [0];
+
+    const FT5336_OK: u8 = 0;
+    const FT5336_ERROR: u8 = 0xff;
+    const FT5336_TOUCHPAD_ADDR: u8 = 0x38;
+    // const FT5336_MAX_NB_TOUCH: u8 = 0x05;
+    // I2C device addresses
+    const FT5336_DEV_MODE_REG: u8 = 0x00;
+
+    /* Gesture ID register */
+    const FT5336_GEST_ID_REG: u8 = 0x01;
+
+    /* Touch Data Status register : gives number of active touch points (0..2) */
+    const FT5336_TD_STAT_REG: u8 = 0x02;
+
+    /* P1 X, Y coordinates, weight and misc registers */
+    const FT5336_P1_XH_REG: u8 = 0x03;
+    const FT5336_P1_XL_REG: u8 = 0x04;
+    const FT5336_P1_YH_REG: u8 = 0x05;
+    const FT5336_P1_YL_REG: u8 = 0x06;
+    const FT5336_P1_WEIGHT_REG: u8 = 0x07;
+    const FT5336_P1_MISC_REG: u8 = 0x08;
+    const FT5336_P1_XH_TP_BIT_MASK: u8 = 0x0F;
+    const FT5336_P1_XH_TP_BIT_POSITION: u8 = 0;
+    const FT5336_P1_XL_TP_BIT_MASK: u8 = 0xFF;
+    const FT5336_P1_XL_TP_BIT_POSITION: u8 = 0;
+
+    const FT5336_GMODE_REG: u8 = 0xA4;
+
+    /* FT5336 Chip identification register */
+    const FT5336_CHIP_ID_REG: u8 = 0xA8;
+
+    /* Release code version */
+    const FT5336_RELEASE_CODE_ID_REG: u8 = 0xAF;
+
+    /* Current operating mode the FT5336 system is in (R) */
+    const FT5336_STATE_REG: u8 = 0xBC;
+
+    if i2c.write(FT5336_TOUCHPAD_ADDR, &cmd).is_ok() {
+        rprintln!("Wrote to touchpad okay");
     }
 
-    let mut buf = [0u8; 20];
-    for i in (0..3).rev() {
-        for j in 0..3 {
-            let a = match 1 + i * 3 + j {
-                0 => "0",
-                1 => "1",
-                2 => "2",
-                3 => "3",
-                4 => "4",
-                5 => "5",
-                6 => "6",
-                7 => "7",
-                8 => "8",
-                9 => "9",
-                _ => "",
-            };
-            button(
-                KEY_X_OFFSET + j * KEY_X_SPACING,
-                KEY_Y_OFFSET + i * KEY_Y_SPACING,
-                a,
-                &mut display,
-            );
+    if !i2c
+        .write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_CHIP_ID_REG], &mut buf)
+        .is_ok()
+    {
+        rprintln!("Attempt to read chip ID Failed");
+    } else {
+        let v = buf[0] as u8;
+        rprintln!("Chip id is {:02x}", v);
+    }
+
+    if !i2c
+        .write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_STATE_REG], &mut buf)
+        .is_ok()
+    {
+        rprintln!("Attempt to read chip state failed");
+    } else {
+        let v = buf[0] as u8;
+        rprintln!("Chip state is {:02x}", v);
+    }
+
+    let mut buf: [u8; 2] = [0, 0];
+    if !i2c
+        .write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_P1_XH_REG], &mut buf)
+        .is_ok()
+    {
+        rprintln!("Attempt to read P1_XH failed");
+    } else {
+        let v = buf[0] as u8;
+        let w = buf[1] as u8;
+        rprintln!("Chip state is {:02x}, {:02x}", v, w);
+    }
+
+    let mut step_number: u32 = 0;
+    loop {
+        let mut buf: [u8; 1] = [0];
+        if !i2c
+            .write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_TD_STAT_REG], &mut buf)
+            .is_ok()
+        {
+            rprintln!("Attempt to read chip status failed");
+        } else {
+            if buf[0] == 1 {
+                let _v = buf[0] as u8;
+                let mut buf: [u8; 5] = [0; 5];
+                i2c.write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_P1_XH_REG], &mut buf);
+                // let mut x1 = buf[0] as u8;
+                // i2c.write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_P1_XL_REG], &mut buf);
+                // let x2 = buf[0] as u8;
+                // i2c.write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_P1_YH_REG], &mut buf);
+                // let mut y1 = buf[0] as u8;
+                // i2c.write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_P1_YL_REG], &mut buf);
+                // let y2 = buf[0] as u8;
+                //
+                // if v != 255 && v != 0 {
+                //     rprintln!(
+                //         "Touch status is {:02x} - Key is {:02x}{:02x}x{:02x}{:02x}",
+                //         v,
+                //         buf[0] as u8,
+                //         buf[1] as u8,
+                //         buf[2] as u8,
+                //         buf[3] as u8,
+                //     );
+                // }
+                let status: [u8; 1] = [0];
+                let a = i2c
+                    .write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_GMODE_REG], &mut buf)
+                    .is_ok();
+                // rprintln!("Status is: {:02x}", status[0]);
+                rprintln!(
+                    "{:10}: {:03},{:03}  - {:02x}",
+                    step_number,
+                    buf[2] as u16 * 256 + buf[3] as u16,
+                    269 - ((buf[0] & 0x7F) as u16 * 256 + buf[1] as u16),
+                    buf[4] as u8,
+                );
+                // let mut buf: [u8; 1] = [0];
+                // i2c.write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_P1_XH_REG], &mut buf);
+                // let mut xh = buf[0] as u8;
+                // i2c.write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_P1_XL_REG], &mut buf);
+                // let xl = buf[0] as u8;
+                // i2c.write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_P1_YH_REG], &mut buf);
+                // let mut yh = buf[0] as u8;
+                // i2c.write_read(FT5336_TOUCHPAD_ADDR, &[FT5336_P1_YL_REG], &mut buf);
+                // let yl = buf[0] as u8;
+                // if v != 255 && v != 0 {
+                //     rprintln!(
+                //         "------------ is {:02x} - Key is {:02x}{:02x}x{:02x}{:02x}",
+                //         v,
+                //         xh as u8,
+                //         xl as u8,
+                //         yh as u8,
+                //         yl as u8,
+                //     );
+                // }
+            } else {
+                rprintln!("fingers: {}", buf[0]);
+            }
         }
-    }
-    button(
-        KEY_X_OFFSET,
-        KEY_Y_OFFSET + 3 * KEY_Y_SPACING,
-        "0",
-        &mut display,
-    );
-    button(
-        KEY_X_OFFSET + 1 * KEY_X_SPACING,
-        KEY_Y_OFFSET + 3 * KEY_Y_SPACING,
-        ".",
-        &mut display,
-    );
-    button(
-        KEY_X_OFFSET + 2 * KEY_X_SPACING,
-        KEY_Y_OFFSET + 3 * KEY_Y_SPACING,
-        "",
-        &mut display,
-    );
-
-    let style = PrimitiveStyleBuilder::new()
-        .stroke_width(BUTTON_STROKE_WIDTH)
-        .stroke_color(BUTTON_STROKE_COLOR)
-        .fill_color(Rgb565::BLACK)
-        .build();
-
-    RoundedRectangle::with_equal_corners(
-        Rectangle::new(
-            Point::new(KEY_X_OFFSET, KEY_Y_OFFSET - 55),
-            Size::new(BUTTON_WIDTH + (2 * KEY_X_SPACING) as u32, BUTTON_HEIGHT),
-        ),
-        Size::new(CORNER_RADIUS, CORNER_RADIUS),
-    )
-    .into_styled(style)
-    .draw(&mut display)
-    .ok();
-
-    let style = MonoTextStyle::new(&PROFONT_24_POINT, Rgb565::YELLOW);
-
-    Text::new(
-        "300.89",
-        Point::new(KEY_X_OFFSET + TEXT_XOFFSET, 5 + TEXT_YOFFSET),
-        style,
-    )
-    .draw(&mut display)
-    .ok();
-
-    // button(20, 40, "1", &mut display);
-
-    // display.controller.draw_rectangle();
-
-    //     top_left = (32,32),
-    //     bottom_right = (479, 271),
-    //     style = primitive_style!(fill_color = Rgb565::new(0, 0b11110, 0b11011))
-    // );
-    // r.draw(display).ok();
-
-    // let c1 = egcircle!(
-    //     center = (20, 20),
-    //     radius = 8,
-    //     style = primitive_style!(fill_color = Rgb565::new(0, 63, 0))
-    // );
-
-    // let c2 = egcircle!(
-    //     center = (25, 20),
-    //     radius = 8,
-    //     style = primitive_style!(fill_color = Rgb565::new(31, 0, 0))
-    // );
-
-    // let t = egtext!(
-    //     text = "Hello Rust!",
-    //     top_left = (100, 100),
-    //     style = text_style!(font = Font6x8, text_color = RgbColor::WHITE)
-    // );
-
-    // c1.draw(display).ok();
-    // c2.draw(display).ok();
-    // t.draw(display).ok();
-
-    for i in 0..300 {
-        // let c1 = egcircle!(
-        //     center = (20 + i, 20),
-        //     radius = 8,
-        //     style = primitive_style!(fill_color = RgbColor::GREEN)
-        // );
-        // c1.draw(display).ok();
+        // delay.delay_us(500);
+        step_number += 1;
     }
 
-    // display.flush().unwrap();
+    // const FT62XX_REG_NUMTOUCHES: u8 = 0x0; // !< Touch X position
 
-    loop {}
+    // let byte: [u8; 1] = [0; 1]; //FT62XX_REG_NUMTOUCHES; 1];
+    // let mut buffer: [u8; 16] = [0; 16];
+    // if !i2c.write(0x1A, &byte).is_ok() {
+    //     rprintln!("Error response when sending request for touches");
+    // } else {
+    //     if !i2c.read(0x38, &mut buffer).is_ok() {
+    //         rprintln!("Error in reading for touches");
+    //     };
+    //     for i in 0..16 {
+    //         rprintln!("{}: {}", i, buffer[i] as u8);
+    //     }
+    // }
+
+    // let ft5336 = Ft5336::new(i2c);
+
+    // rprintln!("On 0x38 the registers contain:");
+    // let mut byte: [u8; 10] = [0x01; 10];
+    // for i in 0x00_u8..0x10 {
+    //     if i2c.write(0x38, &byte).is_ok() {
+    //         i2c.read(0x38, &mut byte);
+    //         for i in 0..10 {
+    //             rprintln!("Buffer {}: {}", i, byte[i] as u8);
+    //         }
+    //     } else {
+    //         rprintln!("unsuccessful at writing");
+    //     }
+    // }
+
+    // let style = MonoTextStyle::new(&PROFONT_24_POINT, Rgb565::YELLOW);
+
+    // let a = match addresses {
+    //     0 => "0",
+    //     1 => "1",
+    //     2 => "2",
+    //     3 => "3",
+    //     4 => "4",
+    //     5 => "5",
+    //     6 => "6",
+    //     7 => "7",
+    //     8 => "8",
+    //     9 => "9",
+    //     _ => "More",
+    // };
+
+    // loop {}
 }

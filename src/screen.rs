@@ -3,7 +3,7 @@ use embedded_graphics::{
     geometry::Size,
     pixelcolor::{Rgb565, RgbColor},
     prelude::*,
-    primitives::{self, PrimitiveStyle, Rectangle, Styled},
+    primitives::Rectangle,
     Pixel,
 };
 
@@ -51,12 +51,13 @@ impl<T: 'static + SupportedWord> Stm32F7DiscoDisplay<T> {
 
 impl Stm32F7DiscoDisplay<u16> {
     /// Draw a hardware accelerated (by DMA2D) rectangle
+    #[allow(dead_code)]
     pub fn draw_rectangle(
         &mut self,
         rect: Rectangle,
-        c: Rgb565, // item: &Styled<primitives::rectangle::Rectangle, PrimitiveStyle<Rgb565>>,
+        _c: Rgb565, // item: &Styled<primitives::rectangle::Rectangle, PrimitiveStyle<Rgb565>>,
     ) -> Result<(), <Stm32F7DiscoDisplay<u16> as DrawTarget>::Error> {
-        if let Some(bottom_right) = rect.bottom_right() {
+        if let Some(_bottom_right) = rect.bottom_right() {
             // if item.style.stroke_color.is_none() {
             // let color = match item.style.fill_color {
             //     Some(c) => {
