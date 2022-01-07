@@ -113,11 +113,13 @@ impl SubFamily {
         } else if cfg!(feature = "stm32f779") {
             SubFamily::Stm32f779
         } else {
-            error("You must select a target.
-If you added Stm32f7xx HAL as a dependency to your crate, you can select a target by enabling the respective feature in `Cargo.toml`.
-If you're running an example from the repository, select a target by passing the desired target as a command-line argument, for example `--features=stm32f746`.
-Please refer to the documentation for more details."
-                )
+            SubFamily::Stm32f746
+
+            //             error("You must select a target.
+            // If you added Stm32f7xx HAL as a dependency to your crate, you can select a target by enabling the respective feature in `Cargo.toml`.
+            // If you're running an example from the repository, select a target by passing the desired target as a command-line argument, for example `--features=stm32f746`.
+            // Please refer to the documentation for more details."
+            //                 )
         }
     }
 }
