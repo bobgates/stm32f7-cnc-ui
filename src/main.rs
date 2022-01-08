@@ -16,10 +16,7 @@ use ft5336::Ft5336;
 #[allow(unused_imports)]
 use panic_semihosting;
 
-// use ft5336::Ft5336;
-// use profont::PROFONT_24_POINT;
 use rtt_target::{rprintln, rtt_init_print};
-// use screen::Stm32F7DiscoDisplay;
 
 use stm32f7xx_hal::{
     delay::Delay,
@@ -38,8 +35,6 @@ mod view;
 #[entry]
 fn main() -> ! {
     rtt_init_print!();
-
-    rprintln!("Started");
 
     let perif = pac::Peripherals::take().unwrap();
     let cp = cortex_m::Peripherals::take().unwrap();
@@ -100,6 +95,7 @@ fn main() -> ! {
     let mut delay = Delay::new(cp.SYST, clocks);
 
     rprintln!("Connecting to I2c");
+
     let scl = gpioh.ph7.into_alternate_open_drain::<4>(); //LCD_SCL
     let sda = gpioh.ph8.into_alternate_open_drain::<4>(); //LSD_SDA
 
@@ -122,7 +118,9 @@ fn main() -> ! {
     display.controller.reload();
     disp_on.set_high();
 
-    let touch_zones = view::draw_keypad(&mut display);
+    rprintln!("Display on");
+
+    // let touch_zones = view::draw_keypad(&mut display);
 
     let mut i2c = BlockingI2c::i2c3(
         perif.I2C3,
@@ -133,17 +131,30 @@ fn main() -> ! {
         10_000,
     );
 
-    let mut touch = Ft5336::new(&i2c, 0x38, &mut delay).unwrap();
+    // rprintln!("ic defined");
 
+    let state = ui::State::new();
+    // rprintln!("state defined");
+    let update = ui::Update::new();
+    // rprintln!("update defined");
+    let view = &mut view::View::new();
+    // rprintln!("view defined");
+    view.fill();
+    // rprintln!("view filled");
+
+    view.update(&mut display);
+
+    // rprintln!("Touch defined. Before loop");
+    let mut touch = Ft5336::new(&i2c, 0x38, &mut delay).unwrap();
     loop {
-        let mut current_key = ' ';
+        // view.update(&mut display);
         let n = touch.detect_touch(&mut i2c).unwrap();
         if n != 0 {
             let t = touch.get_touch(&mut i2c, 1).unwrap();
-            match touch_zones.locate(t.y, t.x) {
-                Some(e) => {}
-                None => {}
-            };
+            // match touch_zones.locate(t.y, t.x) {
+            //     Some(_e) => {}
+            //     None => {}
+            // };
         };
         touch.delay_ms(10);
     }
