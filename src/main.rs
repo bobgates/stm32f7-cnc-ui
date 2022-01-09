@@ -120,8 +120,6 @@ fn main() -> ! {
 
     rprintln!("Display on");
 
-    // let touch_zones = view::draw_keypad(&mut display);
-
     let mut i2c = BlockingI2c::i2c3(
         perif.I2C3,
         (scl, sda),
@@ -131,30 +129,33 @@ fn main() -> ! {
         10_000,
     );
 
-    // rprintln!("ic defined");
-
-    let state = ui::State::new();
-    // rprintln!("state defined");
     let update = ui::Update::new();
-    // rprintln!("update defined");
     let view = &mut view::View::new();
-    // rprintln!("view defined");
+    let state = ui::State::new();
     view.fill();
     // rprintln!("view filled");
 
     view.update(&mut display);
 
-    // rprintln!("Touch defined. Before loop");
     let mut touch = Ft5336::new(&i2c, 0x38, &mut delay).unwrap();
+    let mut msg = ui::Messages::None;
     loop {
-        // view.update(&mut display);
         let n = touch.detect_touch(&mut i2c).unwrap();
         if n != 0 {
             let t = touch.get_touch(&mut i2c, 1).unwrap();
-            // match touch_zones.locate(t.y, t.x) {
-            //     Some(_e) => {}
-            //     None => {}
-            // };
+            match view.coords_in_button(t.y, t.x) {
+                Some(e) => {
+                    if msg != e {
+                        msg = e;
+                        view.process_message(msg, &mut display);
+                    }
+                }
+                None => {
+                    msg = ui::Messages::None;
+                }
+            };
+        } else {
+            msg = ui::Messages::None;
         };
         touch.delay_ms(10);
     }

@@ -1,3 +1,5 @@
+use rtt_target::rprintln;
+
 const MAX_WHOLE_NUMS: u8 = 3;
 const N_DECIMALS: u8 = 3;
 
@@ -11,7 +13,10 @@ pub struct State {
     running: Running,
     error: bool,
     machine: MachineMode,
+    // view: &'static view::View,
 }
+
+// use crate::view;
 
 impl State {
     pub fn new() -> State {
@@ -25,6 +30,11 @@ impl State {
             error: false,
             machine: MachineMode::Absolute,
         }
+    }
+
+    pub fn event_loop(self, msg: Messages) {
+        rprintln!("In event_loop: {:?}", msg);
+        if msg == Messages::Y0Button {}
     }
 }
 
@@ -46,8 +56,7 @@ enum Running {
     No,
     Jog,
 }
-
-#[derive(Copy, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub enum Messages {
     Key(u8),
     Clear,
@@ -55,6 +64,12 @@ pub enum Messages {
     Enter,
     Halve,
     PlusMinus,
+    XButton,
+    X0Button,
+    YButton,
+    Y0Button,
+    ZButton,
+    Z0Button,
     X(u32),
     Y(u32),
     Z(u32),
