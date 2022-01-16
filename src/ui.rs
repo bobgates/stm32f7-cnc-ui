@@ -32,9 +32,9 @@ impl State {
         }
     }
 
-    pub fn event_loop(self, msg: Messages) {
+    pub fn event_loop(self, msg: Ids) {
         rprintln!("In event_loop: {:?}", msg);
-        if msg == Messages::Y0Button {}
+        if msg == Ids::Y0Button {}
     }
 }
 
@@ -57,12 +57,12 @@ enum Running {
     Jog,
 }
 #[derive(PartialEq, Copy, Clone, Debug)]
-pub enum Messages {
+pub enum Ids {
     Key(u8),
     Clear,
     DecimalPoint,
     Enter,
-    Halve,
+    Half,
     PlusMinus,
     XButton,
     X0Button,
@@ -74,7 +74,7 @@ pub enum Messages {
     Y(u32),
     Z(u32),
     Working(u32),
-    None,
+    Empty,
 }
 
 pub struct Update {}

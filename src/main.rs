@@ -28,6 +28,8 @@ use stm32f7xx_hal::{
     rcc::{HSEClock, HSEClockMode, Rcc},
 };
 
+mod consts;
+mod display;
 mod screen;
 mod ui;
 mod view;
@@ -138,25 +140,19 @@ fn main() -> ! {
     view.update(&mut display);
 
     let mut touch = Ft5336::new(&i2c, 0x38, &mut delay).unwrap();
-    let mut msg = ui::Messages::None;
+    // let mut msg : &view::Button;/
     loop {
+        // rprintln!("1: {:?}", view.active_id);
         let n = touch.detect_touch(&mut i2c).unwrap();
-        if n != 0 {
-            let t = touch.get_touch(&mut i2c, 1).unwrap();
-            match view.coords_in_button(t.y, t.x) {
-                Some(e) => {
-                    if msg != e {
-                        msg = e;
-                        view.process_message(msg, &mut display);
-                    }
-                }
-                None => {
-                    msg = ui::Messages::None;
-                }
-            };
+        if n == 0 {
+            view.process_button(None, &mut display);
         } else {
-            msg = ui::Messages::None;
-        };
+            let t = touch.get_touch(&mut i2c, 1).unwrap();
+            view.process_button(view.button_id_from_coords(t.y, t.x), &mut display);
+        }
+        // else {
+        //     msg = ui::Messages::None;
+        // };
         touch.delay_ms(10);
     }
 }
